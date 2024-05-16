@@ -1,28 +1,33 @@
-import OpenAI from 'openai';
-import { OpenAIStream, StreamingTextResponse } from 'ai';
-import { OPENAI_KEY } from '$env/static/private';
-import type { RequestHandler } from './$types';
+import { createOpenAI } from '@ai-sdk/openai';
+import { StreamingTextResponse, streamText, tool } from 'ai';
 
-const openai = new OpenAI({
-	apiKey: OPENAI_KEY
+import { env } from '$env/dynamic/private';
+import type { RequestHandler } from './$types';
+import { z } from 'zod';
+
+const openai = createOpenAI({
+	apiKey: env.OPENAI_KEY ?? ''
 });
 
-export const config = {
-	runtime: 'edge'
-};
-
-export const POST: RequestHandler = async ({ request }) => {
+export const POST = (async ({ request }) => {
 	const { messages } = await request.json();
 
-	// Ask OpenAI for a streaming chat completion given the prompt
-	const response = await openai.chat.completions.create({
-		model: 'gpt-3.5-turbo',
-		stream: true,
+	const result = await streamText({
+		model: openai('gpt-4-turbo-preview'),
+		tools: {
+			weather: tool({
+				description: 'Get the weather in a location',
+				parameters: z.object({
+					location: z.string().describe('The location to get the weather for')
+				}),
+				execute: async ({ location }) => ({
+					location,
+					temperature: 72 + Math.floor(Math.random() * 21) - 10
+				})
+			})
+		},
 		messages
 	});
 
-	// Convert the response into a friendly text-stream
-	const stream = OpenAIStream(response);
-	// Respond with the stream
-	return new StreamingTextResponse(stream);
-};
+	return new StreamingTextResponse(result.toAIStream());
+}) satisfies RequestHandler;
